@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Stealth Luxe — Sign In</title>
+<meta name="description" content="Configurable body transformation & daily tracker">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="auth-shell">
+  <div class="auth-card fade-in">
+    <div class="auth-logo">
+      <div class="auth-mark"><span></span></div>
+      <div class="auth-title">STEALTH LUXE</div>
+      <div class="auth-sub">YOUR TIMELINE. YOUR GOAL. ADAPTIVE PROTOCOL.</div>
+    </div>
+
+    <div class="auth-toggle">
+      <button type="button" id="tab-signin" class="active">Sign In</button>
+      <button type="button" id="tab-register">Create Account</button>
+    </div>
+
+    <form id="auth-form" novalidate>
+      <div class="field">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" placeholder="e.g. aayush020" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" placeholder="••••••••" required>
+      </div>
+      <div class="error-text" id="auth-error"></div>
+      <button type="submit" class="btn btn-primary" id="submit-btn">Enter Protocol</button>
+    </form>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>
+(async function () {
+  try {
+    const me = await api.me();
+    if (me.authenticated) {
+      window.location.href = me.profile ? '/dashboard.html' : '/onboarding.html';
+      return;
+    }
+  } catch (e) { /* not logged in, stay on page */ }
+
+  const tabSignin = document.getElementById('tab-signin');
+  const tabRegister = document.getElementById('tab-register');
+  const submitBtn = document.getElementById('submit-btn');
+  const passwordInput = document.getElementById('password');
+  const errorEl = document.getElementById('auth-error');
+  const form = document.getElementById('auth-form');
+  let mode = 'signin';
+
+  function setMode(next) {
+    mode = next;
+    errorEl.textContent = '';
+    if (mode === 'signin') {
+      tabSignin.classList.add('active');
+      tabRegister.classList.remove('active');
+      submitBtn.textContent = 'Enter Protocol';
+      passwordInput.setAttribute('autocomplete', 'current-password');
+    } else {
+      tabRegister.classList.add('active');
+      tabSignin.classList.remove('active');
+      submitBtn.textContent = 'Initialize Account';
+      passwordInput.setAttribute('autocomplete', 'new-password');
+    }
+  }
+
+  tabSignin.addEventListener('click', () => setMode('signin'));
+  tabRegister.addEventListener('click', () => setMode('register'));
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorEl.textContent = '';
+    const username = document.getElementById('username').value.trim();
+    const password = passwordInput.value;
+
+    if (!username || !password) {
+      errorEl.textContent = 'Enter a username and password to continue.';
+      return;
+    }
+
+    submitBtn.disabled = true;
+    try {
+      const result = mode === 'signin' ? await api.login(username, password) : await api.register(username, password);
+      window.location.href = result.has_profile ? '/dashboard.html' : '/onboarding.html';
+    } catch (err) {
+      errorEl.textContent = err.message;
+      submitBtn.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>

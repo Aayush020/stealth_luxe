@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Stealth Luxe — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="page">
+  <header id="sl-topbar" class="topbar"></header>
+
+  <main class="app-shell">
+    <div id="dashboard-root">
+      <div class="page-loading">Loading today's protocol…</div>
+    </div>
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>
+(async function () {
+  const me = await requireAuthAndProfile(true);
+  if (!me) return;
+
+  const root = document.getElementById('dashboard-root');
+  renderNav('dashboard');
+
+  async function refresh() {
+    let today;
+    try {
+      today = await api.today();
+    } catch (e) {
+      root.innerHTML = `<div class="page-loading">${e.message}</div>`;
+      return;
+    }
+
+    const goalLabel = today.goal === 'weight_loss' ? 'WEIGHT LOSS' : 'MUSCLE GAIN';
+
+    root.innerHTML = `
+      <div id="countdown-banner" class="countdown-banner fade-in"></div>
+
+      <div class="motivation-block fade-in" style="display:flex; align-items:flex-start; justify-content:space-between; gap: 16px; flex-wrap: wrap;">
+        <div>
+          <div class="eyebrow">${greetingLabel()}</div>
+          <div class="motivation-line">${motivationLine(today)}</div>
+        </div>
+        <span class="goal-chip">${goalLabel}</span>
+      </div>
+
+      ${today.adaptive_note ? `
+      <div class="adherence-note">
+        <span class="dot"></span>
+        <span>${today.adaptive_note}</span>
+      </div>` : ''}
+
+      <div class="grid grid-12" style="margin-bottom:20px;">
+        <div class="col-span-8" style="display:flex;flex-direction:column;gap:20px;">
+
+          <section class="card-flat">
+            <div class="card-header">
+              <span class="card-title">Nutrition Protocol</span>
+              <span class="eyebrow" id="meal-progress-label"></span>
+            </div>
+            <div id="meal-list"></div>
+          </section>
+
+          <section class="card-flat">
+            <div class="card-header">
+              <span class="card-title">${today.plan.workout.type}</span>
+              <span class="eyebrow" id="workout-progress-label"></span>
+            </div>
+            <div id="workout-list"></div>
+          </section>
+
+          <div class="submit-day-wrap" id="submit-section"></div>
+        </div>
+
+        <div class="col-span-4" style="display:flex;flex-direction:column;gap:20px;">
+          <section class="card" style="display:flex;align-items:center;gap:20px;">
+            <div class="ring-wrap">
+              <svg viewBox="0 0 132 132" width="132" height="132">
+                <circle class="ring-track" cx="66" cy="66" r="58"></circle>
+                <circle class="ring-fill" id="ring-fill" cx="66" cy="66" r="58" stroke-dasharray="364.4" stroke-dashoffset="364.4"></circle>
+              </svg>
+              <div class="ring-center">
+                <span class="pct" id="ring-pct">0%</span>
+                <span class="lbl">Today</span>
+              </div>
+            </div>
+            <div class="streak-block">
+              <svg class="flame-icon ${today.streak > 0 ? 'active' : 'inactive'}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2C12 2 7 7.5 7 12.5C7 15.5 9.2 18 12 18C14.8 18 17 15.5 17 12.5C17 11 16.3 9.5 15.5 8.5C15.5 10 14.5 11 13.5 11C14 9 13 6 12 2Z" stroke-width="1.4" stroke-linejoin="round"/>
+                <path d="M9.5 14C9.5 16 10.6 17.5 12 17.5C13.4 17.5 14.5 16 14.5 14" stroke-width="1.4" stroke-linecap="round"/>
+              </svg>
+              <div>
+                <div class="streak-count">${today.streak}</div>
+                <div class="streak-label">Day Streak</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="card-flat">
+            <div class="card-header"><span class="card-title">Fluid Osmosis Tracker</span></div>
+            <div class="water-widget">
+              <div class="water-vessel" id="water-vessel" title="Tap to log 250ml">
+                <div class="water-fill" id="water-fill"></div>
+              </div>
+              <div class="water-meta">
+                <div class="water-amount" id="water-amount">0 L</div>
+                <div class="water-target">of 3.5 L target</div>
+                <div class="water-controls">
+                  <button class="water-btn" id="water-add">+ 250ml</button>
+                  <button class="water-btn" id="water-remove">− 250ml</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    `;
+
+    renderCountdown(today.day_number, today.duration_days, 'countdown-banner');
+    renderMeals(today);
+    renderWorkout(today);
+    renderSubmit(today);
+    renderRing(today);
+    await refreshWater();
+
+    document.getElementById('water-vessel').addEventListener('click', () => bumpWater(250));
+    document.getElementById('water-add').addEventListener('click', () => bumpWater(250));
+    document.getElementById('water-remove').addEventListener('click', () => bumpWater(-250));
+  }
+
+  function greetingLabel() {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Morning protocol';
+    if (hour < 18) return 'Midday checkpoint';
+    return 'Evening close-out';
+  }
+
+  function motivationLine(today) {
+    if (today.submitted) return 'Day secured. Sleep. Recover. Repeat.';
+    const hour = new Date().getHours();
+    if (hour < 12) return 'The day is clean. Secure the metrics.';
+    if (hour < 18) return 'Half the day remains. Stay on protocol.';
+    return 'Close it out. No excuses at this hour.';
+  }
+
+  function renderMeals(today) {
+    const list = document.getElementById('meal-list');
+    list.innerHTML = '';
+    const mealItems = today.items.filter((it) => it.kind === 'meal');
+    let done = 0;
+    mealItems.forEach((it) => {
+      const checked = !!today.checklist[it.key];
+      if (checked) done++;
+      list.appendChild(buildCheckRow(it, checked, today));
+    });
+    document.getElementById('meal-progress-label').textContent = `${done} / ${mealItems.length}`;
+  }
+
+  function renderWorkout(today) {
+    const list = document.getElementById('workout-list');
+    list.innerHTML = '';
+    const workItems = today.items.filter((it) => it.kind === 'workout');
+    let done = 0;
+    workItems.forEach((it) => {
+      const checked = !!today.checklist[it.key];
+      if (checked) done++;
+      list.appendChild(buildCheckRow(it, checked, today));
+    });
+    document.getElementById('workout-progress-label').textContent = `${done} / ${workItems.length}`;
+  }
+
+  function buildCheckRow(it, checked, today) {
+    const row = document.createElement('label');
+    row.className = 'check-row' + (checked ? ' done' : '');
+    const disabled = today.submitted;
+    row.innerHTML = `
+      <span class="ink-checkbox">
+        <input type="checkbox" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+        <svg viewBox="0 0 22 22">
+          <rect class="box" x="1" y="1" width="20" height="20" rx="6"></rect>
+          <rect class="fill-circle" x="1" y="1" width="20" height="20" rx="6"></rect>
+          <path class="tick" d="M5.5 11.5L9 15L16.5 7"></path>
+        </svg>
+      </span>
+      <span class="check-copy">
+        <div class="name">${it.label}</div>
+        <div class="meta">${it.meta}</div>
+      </span>
+    `;
+    if (!disabled) {
+      row.querySelector('input').addEventListener('change', async (e) => {
+        try {
+          await api.setChecklistItem(today.date, it.key, e.target.checked);
+          await refresh();
+        } catch (err) {
+          showToast(err.message);
+        }
+      });
+    }
+    return row;
+  }
+
+  function renderSubmit(today) {
+    const el = document.getElementById('submit-section');
+    if (today.submitted) {
+      const noteHtml = today.note ? `<div class="subtext" style="margin-top:8px;">Your note: “${escapeHtml(today.note)}”</div>` : '';
+      el.innerHTML = `
+        <div style="width:100%;">
+          <button class="submit-day-btn" disabled>Day Secured — ${today.completion_pct}% Logged</button>
+          <span class="submit-day-note">Tomorrow's protocol adapts based on today's adherence.</span>
+          ${noteHtml}
+        </div>`;
+      return;
+    }
+    el.innerHTML = `
+      <div style="width:100%; display:flex; flex-direction:column; gap:12px;">
+        <div class="field" style="margin-bottom:0;">
+          <label for="day-note">Optional Note (felt tired, traveled, low on time…)</label>
+          <input type="text" id="day-note" maxlength="280" placeholder="Anything worth remembering about today?">
+        </div>
+        <div class="submit-day-wrap" style="margin-top:0;">
+          <button class="submit-day-btn" id="submit-btn">Submit Day — ${today.completion_pct}% So Far</button>
+          <span class="submit-day-note">Missed something? <strong>You can still submit</strong> — the tracker adapts tomorrow's plan either way.</span>
+        </div>
+      </div>
+    `;
+    document.getElementById('submit-btn').addEventListener('click', async () => {
+      const note = document.getElementById('day-note').value;
+      try {
+        const res = await api.submitDay(today.date, note);
+        showToast(`Day secured at ${res.completion_pct}%. Streak: ${res.streak}.`);
+        await refresh();
+      } catch (err) {
+        showToast(err.message);
+      }
+    });
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function renderRing(today) {
+    const circumference = 364.4;
+    const offset = circumference - (circumference * today.completion_pct) / 100;
+    document.getElementById('ring-fill').style.strokeDashoffset = offset;
+    document.getElementById('ring-pct').textContent = `${today.completion_pct}%`;
+  }
+
+  async function refreshWater() {
+    const w = await api.getWater();
+    const pct = Math.min(100, (w.amount_ml / w.target_ml) * 100);
+    document.getElementById('water-fill').style.height = `${pct}%`;
+    document.getElementById('water-amount').textContent = `${(w.amount_ml / 1000).toFixed(2).replace(/\.00$/, '')} L`;
+  }
+
+  async function bumpWater(delta) {
+    await api.bumpWater(delta);
+    await refreshWater();
+  }
+
+  refresh();
+})();
+</script>
+</body>
+</html>

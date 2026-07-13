@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Stealth Luxe — Progress</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="page">
+  <header id="sl-topbar" class="topbar"></header>
+
+  <main class="app-shell">
+    <div id="progress-root">
+      <div class="page-loading">Loading transformation matrix…</div>
+    </div>
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>
+(async function () {
+  const me = await requireAuthAndProfile(true);
+  if (!me) return;
+
+  const root = document.getElementById('progress-root');
+  renderNav('progress');
+
+  const CATEGORY_LABELS = {
+    rest: 'Recovery', push: 'Push', pull: 'Pull', legs: 'Legs', core: 'Core', cardio: 'Cardio',
+    'meal:breakfast': 'Breakfast', 'meal:lunch': 'Lunch', 'meal:snack': 'Snack', 'meal:dinner': 'Dinner',
+  };
+
+  async function refresh() {
+    let p;
+    try {
+      p = await api.progress();
+    } catch (e) {
+      root.innerHTML = `<div class="page-loading">${e.message}</div>`;
+      return;
+    }
+
+    const goalLabel = p.profile.goal === 'weight_loss' ? 'Weight Loss' : 'Muscle Gain';
+    const weightDelta = p.latest_weight - p.profile.current_weight;
+    const goalIsLoss = p.profile.goal === 'weight_loss';
+    const goodDirection = goalIsLoss ? weightDelta <= 0 : weightDelta >= 0;
+    const deltaColor = weightDelta === 0 ? 'var(--text-secondary)' : (goodDirection ? 'var(--accent-cyan)' : 'var(--accent-crimson)');
+
+    root.innerHTML = `
+      <div id="countdown-banner" class="countdown-banner fade-in"></div>
+
+      <div class="motivation-block fade-in" style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <div>
+          <div class="eyebrow">Macro Analytics</div>
+          <div class="motivation-line">Transformation Matrix</div>
+        </div>
+        <span class="goal-chip">${goalLabel}</span>
+      </div>
+
+      <div class="grid grid-3" style="margin-bottom:20px;">
+        <div class="stat-tile"><div class="stat-value">${p.days_secured}</div><div class="stat-label">Days Secured</div></div>
+        <div class="stat-tile"><div class="stat-value">${p.streak}</div><div class="stat-label">Current Streak</div></div>
+        <div class="stat-tile">
+          <div class="stat-value" style="color:${deltaColor}">${weightDelta > 0 ? '+' : ''}${weightDelta.toFixed(1)} kg</div>
+          <div class="stat-label">Weight Change</div>
+        </div>
+      </div>
+
+      <div class="grid grid-3" style="margin-bottom:20px;">
+        <div class="stat-tile"><div class="stat-value">${p.bmi ?? '—'}</div><div class="stat-label">BMI · ${p.bmi_category || 'N/A'}</div></div>
+        <div class="stat-tile"><div class="stat-value">${Math.max(0, p.duration_days - p.day_number + 1)}</div><div class="stat-label">Days Remaining</div></div>
+        <div class="stat-tile"><div class="stat-value mono-figure" style="font-size:18px;">${formatDate(p.finish_date)}</div><div class="stat-label">Projected Finish</div></div>
+      </div>
+
+      <div class="grid grid-2" style="margin-bottom:20px;">
+        <section class="card-flat">
+          <div class="card-header"><span class="card-title">Weekly Weight Thermometer</span></div>
+          <div class="thermo-wrap">
+            <div class="thermo-track">
+              <div class="thermo-fill" id="thermo-fill"></div>
+              <div class="thermo-dot" id="thermo-dot"></div>
+              <div class="thermo-marker" id="thermo-marker"></div>
+            </div>
+            <div class="thermo-endpoints">
+              <span>Start · ${p.profile.current_weight.toFixed(1)} kg</span>
+              <span>Target · ${p.profile.target_weight.toFixed(1)} kg</span>
+            </div>
+          </div>
+          <div id="weight-chart-wrap" style="margin-top:20px;"></div>
+          <div class="field" style="margin-top:20px; margin-bottom:10px;">
+            <label for="weight-input">Log Current Weight (kg)</label>
+            <input type="number" id="weight-input" step="0.1" placeholder="e.g. 76.5">
+          </div>
+          <div class="error-text" id="weight-error"></div>
+          <button class="btn btn-ghost" id="weight-log-btn">Log Weekly Weight</button>
+        </section>
+
+        <section class="card-flat">
+          <div class="card-header"><span class="card-title">Adaptive Insights</span></div>
+          <div class="subtext" style="margin-bottom:14px;">Adherence over the last 14 logged days — this is exactly what drives tomorrow's plan.</div>
+          <div id="adherence-bars"></div>
+        </section>
+      </div>
+
+      <div class="grid grid-2" style="margin-bottom:20px;">
+        <section class="card-flat">
+          <div class="card-header"><span class="card-title">Consistency Tier Badges</span></div>
+          <div class="badge-grid" id="badge-grid"></div>
+        </section>
+
+        <section class="card-flat">
+          <div class="card-header">
+            <span class="card-title">Completion Matrix</span>
+            <span class="eyebrow">${p.days_secured} / ${p.duration_days} secured</span>
+          </div>
+          <div class="heatmap" id="heatmap"></div>
+        </section>
+      </div>
+
+      <div class="grid grid-2" style="margin-bottom:20px;">
+        <section class="card-flat">
+          <div class="card-header"><span class="card-title">Recent Days</span></div>
+          <div id="timeline-list"></div>
+        </section>
+
+        <section class="card-flat">
+          <div class="card-header"><span class="card-title">Account</span></div>
+          <div class="subtext" style="margin-bottom:16px;">Your data lives only in this app's database — nothing is shared. Export it, restart your protocol, or erase everything below.</div>
+          <div style="display:flex; gap:12px; flex-wrap:wrap;">
+            <a class="btn btn-ghost" id="export-btn" href="${'/api/export'}" style="width:auto; padding:12px 20px; display:inline-flex;">Export My Data</a>
+            <button class="btn btn-ghost" id="restart-btn" style="width:auto; padding:12px 20px;">Restart Protocol</button>
+            <button class="btn btn-danger" id="delete-btn" style="width:auto; padding:12px 20px;">Delete Account & All Data</button>
+          </div>
+        </section>
+      </div>
+    `;
+
+    renderCountdown(p.day_number, p.duration_days, 'countdown-banner');
+    renderThermometer(p);
+    renderWeightChart(p);
+    renderAdherence(p);
+    renderBadges(p);
+    renderHeatmap(p);
+    renderTimeline(p);
+    wireWeightForm();
+    wireAccountActions();
+  }
+
+  function formatDate(iso) {
+    const d = new Date(iso + 'T00:00:00');
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  function renderWeightChart(p) {
+    const wrap = document.getElementById('weight-chart-wrap');
+    const logs = p.weight_logs || [];
+    if (logs.length < 2) {
+      wrap.innerHTML = `<div class="subtext">Log your weight for a couple of weeks to see a trend line here.</div>`;
+      return;
+    }
+    const W = 100, H = 32, pad = 3;
+    const weights = logs.map((l) => l.weight);
+    const min = Math.min(...weights, p.profile.target_weight);
+    const max = Math.max(...weights, p.profile.target_weight);
+    const span = (max - min) || 1;
+    const points = logs.map((l, i) => {
+      const x = pad + (i / (logs.length - 1)) * (W - pad * 2);
+      const y = H - pad - ((l.weight - min) / span) * (H - pad * 2);
+      return [x, y];
+    });
+    const targetY = H - pad - ((p.profile.target_weight - min) / span) * (H - pad * 2);
+    const pathD = points.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt[0].toFixed(2)} ${pt[1].toFixed(2)}`).join(' ');
+    const dots = points.map((pt) => `<circle cx="${pt[0].toFixed(2)}" cy="${pt[1].toFixed(2)}" r="1.6" fill="var(--accent-cyan)"/>`).join('');
+
+    wrap.innerHTML = `
+      <div class="eyebrow" style="margin-bottom:8px;">Weight Trend</div>
+      <svg viewBox="0 0 ${W} ${H}" width="100%" height="90" preserveAspectRatio="none" style="overflow:visible;">
+        <line x1="0" y1="${targetY.toFixed(2)}" x2="${W}" y2="${targetY.toFixed(2)}" stroke="var(--border-hairline-strong)" stroke-width="0.4" stroke-dasharray="1.5,1.5"/>
+        <path d="${pathD}" fill="none" stroke="var(--accent-lunar)" stroke-width="0.8" vector-effect="non-scaling-stroke"/>
+        ${dots}
+      </svg>
+      <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-tertiary); margin-top:4px;">
+        <span>${formatDate(logs[0].log_date)}</span>
+        <span>${formatDate(logs[logs.length - 1].log_date)}</span>
+      </div>
+    `;
+  }
+
+  function renderTimeline(p) {
+    const el = document.getElementById('timeline-list');
+    const items = p.timeline || [];
+    if (!items.length) {
+      el.innerHTML = `<div class="subtext">Submit a day to start building your history here.</div>`;
+      return;
+    }
+    el.innerHTML = items.map((item) => `
+      <div class="check-row" style="cursor:default;">
+        <span class="ink-checkbox" style="pointer-events:none;">
+          <svg viewBox="0 0 22 22"><circle cx="11" cy="11" r="9" fill="none" stroke="${item.completion_pct >= 85 ? 'var(--accent-cyan)' : item.completion_pct >= 50 ? 'var(--accent-lunar)' : 'var(--accent-crimson)'}" stroke-width="2"/></svg>
+        </span>
+        <span class="check-copy">
+          <div class="name">Day ${item.day_number} · ${formatDate(item.log_date)} — ${item.completion_pct}%</div>
+          <div class="meta">${item.workout_type}${item.note ? ' · “' + escapeHtml(item.note) + '”' : ''}</div>
+        </span>
+      </div>
+    `).join('');
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function renderThermometer(p) {
+    const start = p.profile.current_weight;
+    const target = p.profile.target_weight;
+    const latest = p.latest_weight;
+    const span = (target - start) || 1;
+    const progressPct = ((latest - start) / span) * 100;
+    const fillPct = Math.max(0, Math.min(100, progressPct));
+    document.getElementById('thermo-fill').style.width = `${fillPct}%`;
+    document.getElementById('thermo-dot').style.left = `${fillPct}%`;
+    document.getElementById('thermo-marker').style.left = `${fillPct}%`;
+    document.getElementById('thermo-marker').textContent = `${latest.toFixed(1)} kg`;
+  }
+
+  function renderAdherence(p) {
+    const el = document.getElementById('adherence-bars');
+    const entries = Object.entries(p.adherence_breakdown || {}).filter(([, v]) => v !== null);
+    if (!entries.length) {
+      el.innerHTML = `<div class="subtext">Submit a few days to unlock adherence insights here.</div>`;
+      return;
+    }
+    el.innerHTML = entries.map(([cat, pct]) => `
+      <div style="margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:6px;">
+          <span>${CATEGORY_LABELS[cat] || cat}</span>
+          <span class="mono-figure">${pct}%</span>
+        </div>
+        <div class="thermo-track" style="margin:0;">
+          <div class="thermo-fill" style="width:${pct}%; background:${pct < 50 ? 'var(--accent-crimson)' : pct > 85 ? 'var(--accent-cyan)' : 'var(--accent-lunar)'};"></div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function renderBadges(p) {
+    const grid = document.getElementById('badge-grid');
+    grid.innerHTML = p.badges.map((b) => `
+      <div class="badge ${b.unlocked ? 'unlocked' : ''}">
+        <div class="badge-icon">${b.icon}</div>
+        <div class="badge-name">${b.name}</div>
+        <div class="badge-req">${b.unlocked ? 'Unlocked' : `${b.threshold} days`}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderHeatmap(p) {
+    const el = document.getElementById('heatmap');
+    el.innerHTML = p.heatmap.map((cell) => {
+      const cls = ['heat-cell'];
+      if (cell.filled) cls.push('filled');
+      if (cell.is_today) cls.push('today-cell');
+      const opacity = cell.filled ? Math.max(0.35, cell.completion_pct / 100) : 1;
+      return `<div class="${cls.join(' ')}" style="opacity:${cell.filled ? opacity : 1}" title="${cell.date}${cell.filled ? ' · ' + cell.completion_pct + '%' : ''}"></div>`;
+    }).join('');
+  }
+
+  function wireWeightForm() {
+    document.getElementById('weight-log-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('weight-error');
+      errorEl.textContent = '';
+      const val = parseFloat(document.getElementById('weight-input').value);
+      if (!val || val <= 0) {
+        errorEl.textContent = 'Enter a valid weight to log.';
+        return;
+      }
+      try {
+        await api.logWeight(val);
+        document.getElementById('weight-input').value = '';
+        showToast('Weight logged for this week.');
+        await refresh();
+      } catch (err) {
+        errorEl.textContent = err.message;
+      }
+    });
+  }
+
+  function wireAccountActions() {
+    document.getElementById('restart-btn').addEventListener('click', async () => {
+      if (!confirm('This clears your current protocol, logs, and weight history so you can start fresh. Your login stays. Continue?')) return;
+      await api.resetAccount();
+      window.location.href = '/onboarding.html';
+    });
+    document.getElementById('delete-btn').addEventListener('click', async () => {
+      if (!confirm('This permanently deletes your account and every trace of your data. This cannot be undone. Continue?')) return;
+      await api.deleteAccount();
+      window.location.href = '/';
+    });
+  }
+
+  refresh();
+})();
+</script>
+</body>
+</html>

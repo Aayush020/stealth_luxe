@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Stealth Luxe — Initialize Transformation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="auth-shell">
+  <div class="auth-card fade-in" style="max-width: 520px;">
+    <div class="auth-logo">
+      <div class="auth-mark"><span></span></div>
+      <div class="auth-title">THE PERSONALIZATION MATRIX</div>
+      <div class="auth-sub">CALIBRATE YOUR OWN PROTOCOL</div>
+    </div>
+
+    <form id="onboard-form" novalidate>
+      <div class="grid grid-2" style="margin-bottom:0;">
+        <div class="field">
+          <label for="age">Age</label>
+          <input type="number" id="age" min="14" max="90" placeholder="24" required>
+        </div>
+        <div class="field">
+          <label for="gender">Gender</label>
+          <select id="gender" required>
+            <option value="" disabled selected>Select</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid grid-2" style="margin-bottom:0;">
+        <div class="field">
+          <label for="height">Height (cm)</label>
+          <input type="number" id="height" min="100" max="250" placeholder="172" required>
+        </div>
+        <div class="field">
+          <label for="current-weight">Current Weight (kg)</label>
+          <input type="number" id="current-weight" min="30" max="250" step="0.1" placeholder="78" required>
+        </div>
+      </div>
+
+      <div class="grid grid-2" style="margin-bottom:0;">
+        <div class="field">
+          <label for="target-weight">Target Weight (kg)</label>
+          <input type="number" id="target-weight" min="30" max="250" step="0.1" placeholder="70" required>
+        </div>
+        <div class="field" style="justify-content:flex-end;">
+          <label>&nbsp;</label>
+          <div class="subtext" style="padding-top:6px;">Height powers your BMI reading on Progress — nothing more.</div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Goal</label>
+        <div class="pill-choice-group" id="goal-group">
+          <div class="pill-choice" data-value="weight_loss">Weight Loss</div>
+          <div class="pill-choice" data-value="muscle_gain">Muscle Gain</div>
+        </div>
+      </div>
+      <div class="goal-hint" id="goal-hint">Based on your weights, we suggest <strong>Weight Loss</strong> — tap either to override.</div>
+
+      <div class="field">
+        <label>Food Type</label>
+        <div class="pill-choice-group" id="food-type-group">
+          <div class="pill-choice selected" data-value="veg">Vegetarian</div>
+          <div class="pill-choice" data-value="nonveg">Non-Vegetarian</div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Program Length</label>
+        <div class="duration-presets" id="duration-presets">
+          <div class="duration-chip" data-days="30">30 Days</div>
+          <div class="duration-chip" data-days="60">60 Days</div>
+          <div class="duration-chip" data-days="90">90 Days</div>
+          <div class="duration-chip selected" data-days="120">120 Days</div>
+          <div class="duration-chip" data-days="custom">Custom</div>
+        </div>
+        <input type="number" id="custom-days" min="7" max="365" placeholder="Enter number of days (7–365)" style="display:none; margin-top:8px;">
+      </div>
+
+      <div class="error-text" id="onboard-error"></div>
+      <button type="submit" class="btn btn-primary" id="init-btn">Initialize Transformation</button>
+    </form>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>
+(async function () {
+  const me = await requireAuthAndProfile(false);
+  if (!me) return;
+  if (me.profile) { window.location.href = '/dashboard.html'; return; }
+
+  const foodGroup = document.getElementById('food-type-group');
+  let foodType = 'veg';
+  foodGroup.addEventListener('click', (e) => {
+    const target = e.target.closest('.pill-choice');
+    if (!target) return;
+    foodType = target.dataset.value;
+    [...foodGroup.children].forEach((c) => c.classList.toggle('selected', c === target));
+  });
+
+  const goalGroup = document.getElementById('goal-group');
+  const goalHint = document.getElementById('goal-hint');
+  let goalOverride = null;
+
+  function suggestedGoal() {
+    const cw = parseFloat(document.getElementById('current-weight').value);
+    const tw = parseFloat(document.getElementById('target-weight').value);
+    if (!cw || !tw) return null;
+    return tw < cw ? 'weight_loss' : 'muscle_gain';
+  }
+
+  function refreshGoalUI() {
+    const suggested = suggestedGoal();
+    const active = goalOverride || suggested;
+    [...goalGroup.children].forEach((c) => c.classList.toggle('selected', c.dataset.value === active));
+    if (suggested) {
+      const label = suggested === 'weight_loss' ? 'Weight Loss' : 'Muscle Gain';
+      goalHint.innerHTML = goalOverride && goalOverride !== suggested
+        ? `Your weights suggest <strong>${label}</strong>, but you've chosen to override it above.`
+        : `Based on your weights, we suggest <strong>${label}</strong> — tap either pill to override.`;
+    } else {
+      goalHint.textContent = 'Enter your current and target weight, or tap a goal to choose it directly.';
+    }
+  }
+
+  goalGroup.addEventListener('click', (e) => {
+    const target = e.target.closest('.pill-choice');
+    if (!target) return;
+    goalOverride = target.dataset.value;
+    refreshGoalUI();
+  });
+  document.getElementById('current-weight').addEventListener('input', refreshGoalUI);
+  document.getElementById('target-weight').addEventListener('input', refreshGoalUI);
+  refreshGoalUI();
+
+  const durationPresets = document.getElementById('duration-presets');
+  const customDaysInput = document.getElementById('custom-days');
+  let durationDays = 120;
+  durationPresets.addEventListener('click', (e) => {
+    const target = e.target.closest('.duration-chip');
+    if (!target) return;
+    [...durationPresets.children].forEach((c) => c.classList.toggle('selected', c === target));
+    if (target.dataset.days === 'custom') {
+      customDaysInput.style.display = 'block';
+      customDaysInput.focus();
+      durationDays = null;
+    } else {
+      customDaysInput.style.display = 'none';
+      durationDays = parseInt(target.dataset.days, 10);
+    }
+  });
+  customDaysInput.addEventListener('input', () => {
+    durationDays = parseInt(customDaysInput.value, 10) || null;
+  });
+
+  document.getElementById('onboard-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('onboard-error');
+    errorEl.textContent = '';
+
+    const age = parseInt(document.getElementById('age').value, 10);
+    const gender = document.getElementById('gender').value;
+    const height = parseFloat(document.getElementById('height').value);
+    const currentWeight = parseFloat(document.getElementById('current-weight').value);
+    const targetWeight = parseFloat(document.getElementById('target-weight').value);
+    const goal = goalOverride || suggestedGoal();
+
+    if (!age || !gender || !height || !currentWeight || !targetWeight) {
+      errorEl.textContent = 'Fill in every field to calibrate your protocol.';
+      return;
+    }
+    if (currentWeight === targetWeight) {
+      errorEl.textContent = 'Target weight must differ from current weight.';
+      return;
+    }
+    if (!goal) {
+      errorEl.textContent = 'Choose a goal to continue.';
+      return;
+    }
+    if (!durationDays || durationDays < 7 || durationDays > 365) {
+      errorEl.textContent = 'Program length must be between 7 and 365 days.';
+      return;
+    }
+
+    const submitBtn = document.getElementById('init-btn');
+    submitBtn.disabled = true;
+    try {
+      await api.onboarding({
+        age, gender, height_cm: height, current_weight: currentWeight, target_weight: targetWeight,
+        food_type: foodType, goal, duration_days: durationDays,
+      });
+      window.location.href = '/dashboard.html';
+    } catch (err) {
+      errorEl.textContent = err.message;
+      submitBtn.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>
